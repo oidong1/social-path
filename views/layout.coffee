@@ -13,7 +13,13 @@ html lang:'ja',->
     header class:'navbar navbar-fixed-top',->
       div class:'navbar-inner',->
         div class:'container',->
-          a class:'brand', href:'/',->
+          a class:'brand', href:'../',->
             text 'Social-Path'
+          div class:'nav-collapse',->
+            ul class:'nav',->
+              li ->
+                a class:"swatch-link",href:"http://localhost:3100/login",->
+                text "SignIn"
+
     div class:'container', ->
       @body

@@ -1,0 +1,93 @@
+## coffee -csb
+io = require('socket.io')
+express = require("express")
+oauth = new (require("oauth").OAuth)(
+   "https://api.twitter.com/oauth/request_token"
+   "https://api.twitter.com/oauth/access_token"
+   "u5NYzybIGyLNSXwi0gGISQ"
+   "7Dbc9ywqNpsRjkBq3MM6ma9BmfRs35qPwVbOZJf0AgE"
+   "1.0"
+   "http://localhost:3100/auth"
+   "HMAC-SHA1")
+
+RedisStore = require('connect-redis')(express)
+app = module.exports = express.createServer()
+app.configure ->
+   app.register '.coffee', require 'coffeekup'
+   app.set "views", __dirname + "/views"
+   app.set "view engine", "coffeekup"
+   app.use express.bodyParser()
+   app.use express.methodOverride()
+   app.use express.cookieParser()
+   app.use express.session(secret: "secret", store: new RedisStore(), cookie: { maxAge: 7 * 24 * 60 * 60 * 1000 })
+   app.use app.router
+   app.use express.static(__dirname + "/public")
+
+app.configure "development", ->
+   app.use express.errorHandler(
+      dumpExceptions: true
+      showStack: true
+   )
+
+app.configure "production", ->
+   app.use express.errorHandler()
+
+app.dynamicHelpers session: (req, res) ->
+   req.session
+
+#routes
+app.get "/", (req,res) ->
+   res.render 'index.coffee'
+
+app.get "/user/:id", (req,res) ->
+  res.render 'index.coffee',{usr: req.params.id}
+
+app.get "/login", (req, res) ->
+  req.session.ref = req.header('Referer')
+  console.log req.header "Referer"
+  oauth.getOAuthRequestToken (error, oauth_token, oauth_token_secret, results) ->
+      if error
+         res.send error
+      else
+         req.session.oauth = {}
+         req.session.oauth.token = oauth_token
+         req.session.oauth.token_secret = oauth_token_secret
+         res.redirect "https://twitter.com/oauth/authenticate?oauth_token=" + oauth_token
+
+app.get "/auth",(req, res) ->
+   if req.session.oauth
+      req.session.oauth.verifier = req.query.oauth_verifier
+      oauth.getOAuthAccessToken req.session.oauth.token, req.session.oauth.token_secret, req.session.oauth.verifier,(error, oauth_access_token, oauth_access_token_secret, results) ->
+         if error
+            res.send error
+         else
+            req.session.oauth.access_token = oauth_access_token
+            req.session.oauth.access_token_secret = oauth_access_token_secret
+            req.session.user_profile = results
+            res.redirect req.session.ref
+
+app.get "/signout", (req, res) ->
+   delete req.session.oauth
+   delete req.session.user_profile
+   res.redirect "/"
+
+app.error (err, res) ->
+   res.send(err.message, 500)
+
+app.listen 3100
+
+count=0
+socket = io.listen(app)
+socket.sockets.on 'connection', (client) ->
+  count++
+  client.broadcast.emit("count", count)
+ 
+  client.on "msg", (msg,usr) ->
+    console.log "sended"
+    client.emit "msg", msg, usr
+    client.broadcast.emit "msg", msg, usr
+
+  client.on "disconnect", ->
+      count--
+
+console.log "Express server listening on port %d in %s mode", app.address().port, app.settings.env
